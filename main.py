@@ -1,9 +1,12 @@
 import streamlit as st
 from functions import *
 
-file_uploaded = Image.open("sample_image.png")
-if not file_uploaded:
-    file_uploaded = st.file_uploader("Upload image here", type = "image/*")
+file_uploaded = st.file_uploader("Upload image here", type="image/*")
+
+if file_uploaded is not None:
+    file_uploaded = Image.open(file_uploaded)
+else:
+    file_uploaded = Image.open("sample_image.png")
 
 YCbCr_image, YCbCr_array = convert_to_YCbCr(file_uploaded)
 

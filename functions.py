@@ -1,106 +1,57 @@
-import streamlit as st
 from PIL import Image
 import numpy as np
 from scipy.fft import dct
 
-def convert_to_YCbCr(file):
-    # If it's already a PIL Image, use it directly
-    if isinstance(file, Image.Image):
-        img = file
-    else:
-        img = Image.open(file)
+def performSVD(A):
+    A = A.astype(float)
 
-    # Convert to numpy array
-    img_array = np.array(img)
+    AtA = A.T @ A
+    # AAt = A @ A.T
 
-    # Handle grayscale (no channel dimension)
-    if len(img_array.shape) == 2:
-        img_array = np.stack([img_array]*3, axis=-1)
+    # eigenvalues_L, V_L = np.linalg.eig(AAt)
+    eigenvalues_R, V_R = np.linalg.eig(AtA)
 
-    # Handle RGBA
-    elif img_array.shape[-1] == 4:
-        rgb = img_array[:, :, :3].copy()
-        alpha = img_array[:, :, 3]
+    # sort the eigen values and eigen vectors
+    idx = np.argsort(eigenvalues_R)[::-1]
+    eigenvalues_R = eigenvalues_R[idx]
+    V_R = V_R[:, idx]
 
-        # Threshold: treat low alpha as transparent
-        threshold = 75
-        mask = (alpha < threshold)
+    S = np.sqrt(eigenvalues_R)
 
-        # Set those pixels to white
-        rgb[mask] = 255
+    U = A @ V_R
+    for i in range(len(S)):
+        if S[i] > 1e-9:
+            U[:, i] /= S[i]
 
-        img_array = rgb
+    return U, np.diag(S), V_R.T
 
-    # Convert back to RGB image
-    img = Image.fromarray(img_array.astype("uint8"), "RGB")
 
-    # Convert to YCbCr
-    ycbcr_img = img.convert("YCbCr")
-    ycbcr_array = np.array(ycbcr_img)
+def compress_channel(A, k):
+    U, S, Vt = performSVD(A)
 
-    return ycbcr_img, ycbcr_array
+    U_k = U[:, :k]
+    S_k = S[:k, :k]
+    Vt_k = Vt[:k, :]
 
-def down_sampling(Y, Cb, Cr):
-    # Helper: 2x2 average downsampling
-    def downsample_2x2(channel):
-        h, w = channel.shape
+    A_k = U_k @ S_k @ Vt_k
 
-        # Make dimensions even (important!)
-        h_even = h - (h % 2)
-        w_even = w - (w % 2)
+    return np.clip(A_k, 0, 255).astype(np.uint8)
 
-        channel = channel[:h_even, :w_even]
+img = np.array([
+    [[12, 200, 45], [255, 30, 90], [60, 180, 240], [10, 10, 10], [123, 222, 111]],
+    [[80, 90, 100], [200, 10, 50], [33, 144, 255], [90, 60, 30], [5, 250, 200]],
+    [[170, 80, 40], [20, 200, 220], [140, 140, 140], [255, 120, 0], [75, 25, 190]],
+    [[60, 10, 255], [180, 180, 20], [0, 0, 0], [100, 200, 50], [240, 240, 240]],
+    [[130, 60, 200], [45, 255, 120], [220, 30, 30], [80, 80, 255], [15, 160, 90]]
+], dtype=np.uint8)
 
-        return (
-            channel[0::2, 0::2] +
-            channel[0::2, 1::2] +
-            channel[1::2, 0::2] +
-            channel[1::2, 1::2]
-        ) // 4
+R = img[:, :, 0]
+G = img[:, :, 1]
+B = img[:, :, 2]
 
-    # Y stays the same
-    Y_ds = Y
+U, S, Vt = performSVD(R)
 
-    # Downsample chroma channels
-    Cb_ds = downsample_2x2(Cb)
-    Cr_ds = downsample_2x2(Cr)
+A_reconstructed = U @ S @ Vt
 
-    return Y_ds, Cb_ds, Cr_ds
+print("Reconstruction error:", np.linalg.norm(R - A_reconstructed))
 
-def pad_channels(Y, Cb, Cr):
-
-    def pad_channel(channel, block_size=8):
-        h, w = channel.shape
-
-        pad_h = (block_size - h % block_size) % block_size
-        pad_w = (block_size - w % block_size) % block_size
-
-        padded = np.pad(
-            channel,
-            ((0, pad_h), (0, pad_w)),
-            mode='edge'
-        )
-
-        return padded
-    
-    Y_pad  = pad_channel(Y)
-    Cb_pad = pad_channel(Cb)
-    Cr_pad = pad_channel(Cr)
-
-    return Y_pad, Cb_pad, Cr_pad
-
-def dct_2d_fast(block):
-    block = block.astype(float) - 128
-    return dct(dct(block.T, norm='ortho').T, norm='ortho')
-
-def apply_dct_fast(channel):
-    h, w = channel.shape
-    dct_coeffs = np.zeros((h, w))
-
-    for i in range(0, h, 8):
-        for j in range(0, w, 8):
-            block = channel[i:i+8, j:j+8]
-            dct_block = dct_2d_fast(block)
-            dct_coeffs[i:i+8, j:j+8] = dct_block
-
-    return dct_coeffs

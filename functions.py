@@ -26,14 +26,62 @@ def performSVD(A):
     return U, np.diag(S), V_R.T
 
 
+# def compress_channel(A, k):
+#     U, S, Vt = performSVD(A)
+
+#     U_k = U[:, :k]
+#     S_k = S[:k, :k]
+#     Vt_k = Vt[:k, :]
+
+#     A_k = U_k @ S_k @ Vt_k
+
+#     return np.clip(A_k, 0, 255).astype(np.uint8)
+
+# version 2
+# def compress_channel(A, k):
+#     A = A.astype(float)
+
+#     # Fast, stable SVD
+#     U, S, Vt = np.linalg.svd(A, full_matrices=False)
+
+#     # Truncate to rank k
+#     U_k = U[:, :k]
+#     S_k = S[:k]
+#     Vt_k = Vt[:k, :]
+
+#     # Efficient reconstruction (no np.diag needed)
+#     A_k = (U_k * S_k) @ Vt_k
+
+#     return np.clip(A_k, 0, 255).astype(np.uint8)
+
+# version 3
 def compress_channel(A, k):
-    U, S, Vt = performSVD(A)
+    A = A.astype(float)
 
-    U_k = U[:, :k]
-    S_k = S[:k, :k]
-    Vt_k = Vt[:k, :]
+    # If grayscale (2D), expand to 3D
+    if A.ndim == 2:
+        A = A[np.newaxis, :, :]
+        squeeze_back = True
+    else:
+        # RGB: (H, W, 3) → (3, H, W)
+        A = np.transpose(A, (2, 0, 1))
+        squeeze_back = False
 
-    A_k = U_k @ S_k @ Vt_k
+    # Batched SVD
+    U, S, Vt = np.linalg.svd(A, full_matrices=False)
+
+    # Truncate
+    U_k = U[:, :, :k]
+    S_k = S[:, :k]
+    Vt_k = Vt[:, :k, :]
+
+    # Reconstruct
+    A_k = np.matmul(U_k * S_k[:, np.newaxis, :], Vt_k)
+
+    if squeeze_back:
+        A_k = A_k[0]
+    else:
+        A_k = np.transpose(A_k, (1, 2, 0))
 
     return np.clip(A_k, 0, 255).astype(np.uint8)
 

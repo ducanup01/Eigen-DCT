@@ -10,11 +10,32 @@ import numpy as np
 #     [[130, 60, 200], [45, 255, 120], [220, 30, 30], [80, 80, 255], [15, 160, 90]]
 # ], dtype=np.uint8)
 
-img = np.array(Image.open("cat.jpg"), dtype=np.uint8)
+def singular_component(img, k):
+    img = img.astype(float)
+
+    channels = []
+
+    for c in range(3):
+
+        A = img[:, :, c]
+
+        U, S, Vt = np.linalg.svd(A, full_matrices=False)
+
+        component = S[k] * np.outer(U[:, k], Vt[k, :])
+
+        channels.append(component)
+
+    result = np.stack(channels, axis=2)
+
+    result = np.clip(result, 0, 255)
+
+    return result.astype(np.uint8)
+
+img = np.array(Image.open("test_cat.png"), dtype=np.uint8)
 
 uploaded_file = st.file_uploader("Upload image")
 if uploaded_file is not None:
-    img = Image.open(uploaded_file)
+    img = Image.open(uploaded_file).convert("RGB")
 
     img = np.array(img, dtype=np.uint8)
 
@@ -37,12 +58,50 @@ st.write(f"Size difference: {img.size - total_values:,} integers")
 pil_img = Image.fromarray(img).resize((400, 400), Image.LANCZOS)
 rgb_img = Image.fromarray(compressed_img).resize((400, 400), Image.LANCZOS)
 
-col0, col1 = st.columns(2)
+component_img = singular_component(img, k - 1)
 
-with col0:
-    st.write(f"Numbers to represent: {img.size:,} integers")
-    st.image(pil_img, caption="Original image", use_container_width=True)
+component_pil = Image.fromarray(component_img).resize(
+    (400, 400),
+    Image.LANCZOS
+)
 
-with col1:
-    st.write(f"Numbers to represent: {total_values:,} integers")
-    st.image(rgb_img, caption="Compressed image", use_container_width=True)
+with st.expander("View Original and Compressed Images", expanded=True):
+
+    col0, col1 = st.columns(2)
+
+    with col0:
+        st.write(f"Numbers to represent: {img.size:,} integers")
+        st.image(pil_img, caption="Original image", use_container_width=True)
+
+        st.image(component_pil, caption=f"Singular component k = {k}", use_container_width=True)
+
+
+    with col1:
+        st.write(f"Numbers to represent: {total_values:,} integers")
+        st.image(rgb_img, caption="Compressed image", use_container_width=True)
+
+
+# Compression Ratio
+compression_ratio = img.size / total_values
+
+# Mean Squared Error
+mse = np.mean((img.astype(np.float64) - compressed_img.astype(np.float64)) ** 2)
+
+# Peak Signal-to-Noise Ratio
+if mse == 0:
+    psnr = float("inf")
+else:
+    psnr = 20 * np.log10(255 / np.sqrt(mse))
+
+st.subheader("Compression Metrics")
+
+metric_col1, metric_col2, metric_col3 = st.columns(3)
+
+with metric_col1:
+    st.metric("Compression Ratio (CR)", f"{compression_ratio:.2f}:1")
+
+with metric_col2:
+    st.metric("Mean Squared Error (MSE)", f"{mse:.2f}")
+
+with metric_col3:
+    st.metric("PSNR", f"{psnr:.2f} dB")

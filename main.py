@@ -105,3 +105,36 @@ with metric_col2:
 
 with metric_col3:
     st.metric("PSNR", f"{psnr:.2f} dB")
+
+st.subheader("SVD Matrices per RGB Channel")
+
+channel_names = ["Red", "Green", "Blue"]
+
+for c in range(3):
+
+    A = img[:, :, c].astype(float)
+
+    U, S, Vt = np.linalg.svd(A, full_matrices=False)
+
+    st.markdown(f"## {channel_names[c]} Channel")
+
+    # Convert singular values into diagonal matrix
+    Sigma = np.diag(S)
+
+    with st.expander(f"{channel_names[c]} - U Matrix", expanded=False):
+        st.dataframe(
+            np.round(U, 3),
+            use_container_width=True
+        )
+
+    with st.expander(f"{channel_names[c]} - Σ (Sigma) Matrix", expanded=False):
+        st.dataframe(
+            np.round(Sigma, 3),
+            use_container_width=True
+        )
+
+    with st.expander(f"{channel_names[c]} - Vᵀ Matrix", expanded=False):
+        st.dataframe(
+            np.round(Vt, 3),
+            use_container_width=True
+        )
